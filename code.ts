@@ -2,7 +2,7 @@ figma.on("run", async () => {
   const selection = figma.currentPage.selection;
 
   if (selection.length === 0) {
-    figma.notify("Please select at least one frame or rectangle.");
+    figma.notify("Please select at least one frame, rectangle, or vector.");
     figma.closePlugin();
     return;
   }
@@ -10,89 +10,120 @@ figma.on("run", async () => {
   // Get or create a local variable collection
   const variableCollections =
     await figma.variables.getLocalVariableCollectionsAsync();
-  let variableCollection = variableCollections[0];
-  if (!variableCollection) {
+  let variableCollection: VariableCollection | null = null;
+
+  if (variableCollections.length === 0) {
+    // Create a new variable collection if none exist
     variableCollection =
       figma.variables.createVariableCollection("Local Variables");
-  }
-
-  // Get or create a mode
-  let modeId = variableCollection.modes[0]?.modeId;
-  if (!modeId) {
-    variableCollection.addMode("Mode 1");
-    modeId = variableCollection.modes[0].modeId;
-  }
-
-  let successCount = 0;
-
-  for (const item of selection) {
-    // Check if the item is a Frame or Rectangle
-    if (
-      item.type === "FRAME" ||
-      item.type === "RECTANGLE" ||
-      item.type === "VECTOR"
-    ) {
-      const node = item as GeometryMixin & SceneNode;
-
-      // Check if the node has fills
-      if (
-        !("fills" in node) ||
-        node.fills === figma.mixed ||
-        node.fills.length === 0
-      ) {
-        continue; // Skip nodes without fills
-      }
-
-      const fills = node.fills as ReadonlyArray<Paint>;
-      const firstFill = fills[0];
-
-      // Check if the first fill is a solid color
-      if (firstFill.type !== "SOLID") {
-        continue; // Skip nodes where the first fill is not solid
-      }
-
-      // Get the color and opacity
-      const color = firstFill.color;
-      const opacity = firstFill.opacity !== undefined ? firstFill.opacity : 1;
-
-      // Define the variable name, using the node's name or a unique ID
-      const variableName = node.name || `Color Variable ${node.id}`;
-
-      // Check if a variable with the same name exists
-      const variables = await figma.variables.getLocalVariablesAsync();
-      let variable = variables.find((v) => v.name === variableName);
-
-      if (!variable) {
-        // Create a new variable if it doesn't exist
-        variable = figma.variables.createVariable(
-          variableName,
-          await figma.variables.getVariableCollectionByIdAsync(
-            variableCollection.id
-          ),
-          "COLOR"
-        );
-      }
-
-      // Set the value for the mode
-      variable.setValueForMode(modeId, {
-        r: color.r,
-        g: color.g,
-        b: color.b,
-        a: opacity,
-      });
-
-      successCount++;
-    } else {
-      // Skip items that are not frames or rectangles
-      continue;
-    }
-  }
-
-  if (successCount > 0) {
-    figma.notify(`${successCount} color variable(s) added successfully.`);
   } else {
-    figma.notify(`NO valid frames or rectangles selected.`);
+    variableCollection = variableCollections[0];
   }
 
-  figma.closePlugin();
+  // Ensure variableCollection is not null before proceeding
+  if (variableCollection === null) {
+    figma.notify("Failed to create or retrieve a variable collection.");
+    figma.closePlugin();
+    return;
+  }
+
+  // Now variableCollection is guaranteed to be non-null
+  // Ensure there's at least one mode
+  if (variableCollection.modes.length === 0) {
+    variableCollection.addMode("Default Mode");
+  }
+
+  // Get the updated modes list
+  const modes = variableCollection.modes;
+
+  // Show the UI and pass the modes to the UI
+  figma.showUI(__html__);
+
+  // Send modes to the UI
+  figma.ui.postMessage({
+    type: "init",
+    modes: modes.map((mode) => ({ name: mode.name, modeId: mode.modeId })),
+  });
+
+  // Handle messages from the UI
+  figma.ui.onmessage = async (msg) => {
+    if (msg.type === "extract-colors") {
+      const selectedModeId = msg.modeId;
+
+      // Proceed to extract colors using the selectedModeId
+      let successCount = 0;
+
+      for (const item of selection) {
+        // Check if the item is a Frame, Rectangle, or Vector
+        if (
+          item.type === "FRAME" ||
+          item.type === "RECTANGLE" ||
+          item.type === "VECTOR"
+        ) {
+          const node = item as GeometryMixin & SceneNode;
+
+          // Check if the node has fills
+          if (
+            !("fills" in node) ||
+            node.fills === figma.mixed ||
+            node.fills.length === 0
+          ) {
+            continue; // Skip nodes without fills
+          }
+
+          const fills = node.fills as ReadonlyArray<Paint>;
+          const firstFill = fills[0];
+
+          // Check if the first fill is a solid color
+          if (firstFill.type !== "SOLID") {
+            continue; // Skip nodes where the first fill is not solid
+          }
+
+          // Get the color and opacity
+          const color = firstFill.color;
+          const opacity =
+            firstFill.opacity !== undefined ? firstFill.opacity : 1;
+
+          // Define the variable name, using the node's name or a unique ID
+          const variableName = node.name || `Color Variable ${node.id}`;
+
+          // Check if a variable with the same name exists
+          const variables = await figma.variables.getLocalVariablesAsync();
+          let variable = variables.find((v) => v.name === variableName);
+
+          if (!variable) {
+            // Create a new variable if it doesn't exist
+            variable = figma.variables.createVariable(
+              variableName,
+              await figma.variables.getVariableCollectionByIdAsync(
+                variableCollection.id
+              ),
+              "COLOR"
+            );
+          }
+
+          // Set the value for the selected mode
+          variable.setValueForMode(selectedModeId, {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+            a: opacity,
+          });
+
+          successCount++;
+        } else {
+          // Skip items that are not frames, rectangles, or vectors
+          continue;
+        }
+      }
+
+      if (successCount > 0) {
+        figma.notify(`${successCount} color variable(s) added successfully.`);
+      } else {
+        figma.notify(`No valid frames, rectangles, or vectors selected.`);
+      }
+
+      figma.closePlugin();
+    }
+  };
 });

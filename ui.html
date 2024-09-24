@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 16px;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+      }
+      select,
+      button {
+        width: 100%;
+        margin-bottom: 16px;
+        padding: 8px;
+        font-size: 14px;
+      }
+      button {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <label for="mode-select">Select Mode:</label>
+    <select id="mode-select"></select>
+    <button id="extract-btn">Extract Colors</button>
+
+    <script>
+      // Receive modes from the plugin code
+      window.onmessage = (event) => {
+        const message = event.data.pluginMessage;
+        if (message.type === "init") {
+          const modes = message.modes;
+          const modeSelect = document.getElementById("mode-select");
+          modes.forEach((mode) => {
+            const option = document.createElement("option");
+            option.value = mode.modeId;
+            option.text = mode.name;
+            modeSelect.add(option);
+          });
+        }
+      };
+
+      // Handle button click
+      document.getElementById("extract-btn").onclick = () => {
+        const modeSelect = document.getElementById("mode-select");
+        const selectedModeId = modeSelect.value;
+        parent.postMessage(
+          { pluginMessage: { type: "extract-colors", modeId: selectedModeId } },
+          "*"
+        );
+      };
+    </script>
+  </body>
+</html>
