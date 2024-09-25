@@ -2,7 +2,7 @@ figma.on("run", async () => {
   const selection = figma.currentPage.selection;
 
   if (selection.length === 0) {
-    figma.notify("Please select at least one frame, rectangle, or vector.");
+    figma.notify("Please select at least 1 frame, rectangle, or vector.");
     figma.closePlugin();
     return;
   }
@@ -27,7 +27,6 @@ figma.on("run", async () => {
     return;
   }
 
-  // Now variableCollection is guaranteed to be non-null
   // Ensure there's at least one mode
   if (variableCollection.modes.length === 0) {
     variableCollection.addMode("Default Mode");
@@ -52,6 +51,15 @@ figma.on("run", async () => {
 
       // Proceed to extract colors using the selectedModeId
       let successCount = 0;
+
+      // Get variables in the current collection
+      const variablesInCollection: Variable[] = [];
+      for (const variableId of variableCollection.variableIds) {
+        const variable = await figma.variables.getVariableByIdAsync(variableId);
+        if (variable) {
+          variablesInCollection.push(variable);
+        }
+      }
 
       for (const item of selection) {
         // Check if the item is a Frame, Rectangle, or Vector
@@ -87,9 +95,10 @@ figma.on("run", async () => {
           // Define the variable name, using the node's name or a unique ID
           const variableName = node.name || `Color Variable ${node.id}`;
 
-          // Check if a variable with the same name exists
-          const variables = await figma.variables.getLocalVariablesAsync();
-          let variable = variables.find((v) => v.name === variableName);
+          // Check if a variable with the same name exists in the collection
+          let variable = variablesInCollection.find(
+            (v) => v.name === variableName
+          );
 
           if (!variable) {
             // Create a new variable if it doesn't exist
@@ -100,9 +109,13 @@ figma.on("run", async () => {
               ),
               "COLOR"
             );
+
+            // Add the new variable to our list
+            variablesInCollection.push(variable);
           }
 
           // Set the value for the selected mode
+          // Existing values in other modes remain untouched
           variable.setValueForMode(selectedModeId, {
             r: color.r,
             g: color.g,
